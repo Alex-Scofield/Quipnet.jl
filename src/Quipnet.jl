@@ -1,5 +1,10 @@
 module Quipnet
 
-# Write your package code here.
+using FFTW
+
+include("solvers.jl")
+
+export free_schrod_periodic
+export schrod_periodic
 
 end
