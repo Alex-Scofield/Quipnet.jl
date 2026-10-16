@@ -5,9 +5,11 @@ authors = ["Alex Scofield Teruel"]
 
 [deps]
 FFTW = "7a1cc6ca-52ef-59f5-83cd-3a7055c09341"
+Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
 
 [compat]
 FFTW = "1.10.0"
+Plots = "1.41.7"
 julia = "1.10.10"
 
 [extras]
