@@ -1,9 +1,13 @@
 name = "Quipnet"
 uuid = "a6675cd2-14c1-4fd8-8a43-37febb01733e"
-authors = ["Alex Scofield Teruel"]
 version = "1.0.0-DEV"
+authors = ["Alex Scofield Teruel"]
+
+[deps]
+FFTW = "7a1cc6ca-52ef-59f5-83cd-3a7055c09341"
 
 [compat]
+FFTW = "1.10.0"
 julia = "1.10.10"
 
 [extras]
