@@ -21,6 +21,14 @@ function _sample_on_grid(f, grids, dims)
     return reshape([f(c...) for c in Iterators.product(grids...)], dims)
 end
 
+# Split-step factors: kinetic in reciprocal space, potential in real space.
+function _splitstep_factors(grids, dims, Vvals, Δt)
+    return (_kinetic_phase(grids, dims, Δt), exp.(-im .* Vvals .* Δt))
+end
+
+# One Lie–Trotter step, U = K V: potential multiplication then kinetic kick.
+_step_forward(ψ, Kfac, Vfac) = ifft(Kfac .* fft(Vfac .* ψ))
+
 """
     free_schrod_periodic(ψ₀, x, t)
     free_schrod_periodic(ψ₀, (x, y), t)
@@ -67,11 +75,9 @@ function schrod_periodic(ψ₀, V, grids::Tuple, t::Number; nsteps)
     ψ = ComplexF64.(_sample_on_grid(ψ₀, grids, dims))
     Vvals = _sample_on_grid(V, grids, dims)
     dt = t / nsteps
-    Vfac = exp.(-im .* Vvals .* dt)
-    Kfac = _kinetic_phase(grids, dims, dt)
+    Kfac, Vfac = _splitstep_factors(grids, dims, Vvals, dt)
     for _ in 1:nsteps
-        ψ = Vfac .* ψ
-        ψ = ifft(Kfac .* fft(ψ))
+        ψ = _step_forward(ψ, Kfac, Vfac)
     end
     return ψ
 end

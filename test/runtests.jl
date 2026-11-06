@@ -199,3 +199,7 @@ end
     @test schrod_periodic(ψ₀.(x, x'), V, (x, x), 5.0; nsteps=30) ≈
         schrod_periodic(ψ₀, V, (x, x), 5.0; nsteps=30)
 end
+
+include("inverse.jl")
+include("inverse_nd.jl")
+include("grid_basis.jl")
