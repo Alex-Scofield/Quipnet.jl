@@ -203,3 +203,5 @@ end
 include("inverse.jl")
 include("inverse_nd.jl")
 include("grid_basis.jl")
+include("observables.jl")
+include("atom.jl")
