@@ -31,15 +31,25 @@ function InverseProblem(forward, input, measurement, basis, noise, inputs,
 end
 
 """
-    apply_forward(problem, ψ0s, V)
+    apply_forward(problem, ψ0s, V, w=nothing)
 
-Propagate each state in `ψ0s` for its corresponding time.
+Propagate each state in `ψ0s` for its corresponding time under `V` plus the
+experiment background from [`experiment_potential`](@ref) for input `w`.
 """
-function apply_forward(problem::InverseProblem, ψ0s, V)
+function _total_potential(problem::InverseProblem, V, w)
+    grids = forward_grids(problem.forward)
+    Vvals = _sample_on_grid(V, grids, map(length, grids))
+    w === nothing && return Vvals
+    bg = experiment_potential(problem.input, w, grids)
+    return bg === nothing ? Vvals : Vvals .+ bg
+end
+
+function apply_forward(problem::InverseProblem, ψ0s, V, w = nothing)
     ψs = ψ0s isa Tuple ? ψ0s : (ψ0s,)
     length(ψs) == length(problem.times) || throw(ArgumentError(
         "input map produced $(length(ψs)) states for $(length(problem.times)) times"))
-    return ntuple(i -> propagate(problem.forward, ψs[i], V, problem.times[i]),
+    Vtot = _total_potential(problem, V, w)
+    return ntuple(i -> propagate(problem.forward, ψs[i], Vtot, problem.times[i]),
         length(ψs))
 end
 
@@ -69,7 +79,7 @@ function generate_data(problem::InverseProblem, V;
         w = problem.inputs[i]
         σw > 0 && (w = _perturb(w, σw, rng))
         ψ0s = apply_input(problem.input, w, forward_grids(problem.forward))
-        ψTs = apply_forward(problem, ψ0s, V)
+        ψTs = apply_forward(problem, ψ0s, V, w)
         μ = apply_measurement(problem.measurement, ψTs)
         if σμ > 0
             μ = μ .+ σμ .* randn(rng, length(μ))

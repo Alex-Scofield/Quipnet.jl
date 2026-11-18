@@ -37,6 +37,17 @@ end
 
 forward_grids(fs::AbstractForwardSolver) = fs.grids
 
+"""
+    hydrogen_solver(grids; nsteps=nothing, dt=nothing)
+
+Split-step solver for a neutral hydrogen atom. The proton Coulomb background is
+assembled per experiment from [`PlacementInput`](@ref) by the
+[`InverseProblem`](@ref) machinery, so this returns a plain
+[`SplitStepSchrodinger`](@ref). Provide exactly one of `nsteps` or `dt`.
+"""
+hydrogen_solver(grids; nsteps = nothing, dt = nothing) =
+    SplitStepSchrodinger(grids; nsteps = nsteps, dt = dt)
+
 function _nsteps(fs::SplitStepSchrodinger, T)
     T ≥ 0 || throw(ArgumentError("T must be ≥ 0"))
     return fs.nsteps === nothing ? max(1, ceil(Int, T / fs.dt)) : fs.nsteps

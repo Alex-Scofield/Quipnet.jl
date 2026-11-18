@@ -84,6 +84,44 @@ function apply_input(A::BatchInput, w, grids::Tuple)
     return ntuple(i -> apply_input(A.maps[i], ws[i], grids), length(A.maps))
 end
 
+"""
+    PlacementInput(; softening=nothing, taper=nothing, normalize=true)
+
+Input map that places a neutral hydrogen atom at the per-experiment location
+`w` (a length-`D` real vector of grid coordinates). The initial state is the
+analytic 1s orbital centered at `w`; the matching proton Coulomb background is
+returned by [`experiment_potential`](@ref). `softening` and `taper` are passed
+through to [`hydrogen_potential`](@ref).
+"""
+struct PlacementInput <: AbstractInputMap
+    softening::Union{Nothing,Float64}
+    taper::Union{Nothing,Float64}
+    normalize::Bool
+end
+
+PlacementInput(; softening = nothing, taper = nothing, normalize::Bool = true) =
+    PlacementInput(softening === nothing ? nothing : Float64(softening),
+        taper === nothing ? nothing : Float64(taper), normalize)
+
+function apply_input(A::PlacementInput, w, grids::NTuple{D,Any}) where D
+    c = _center_vector(w, D)
+    return ComplexF64.(hydrogen_ground_state(grids; center = c,
+        normalize = A.normalize))
+end
+
+"""
+    experiment_potential(A, w, grids)
+
+Fixed background potential contributed by the experiment setup for input `w`,
+or `nothing`. [`PlacementInput`](@ref) returns the proton Coulomb potential
+centered at `w`.
+"""
+experiment_potential(A, w, grids) = nothing
+
+experiment_potential(A::PlacementInput, w, grids::NTuple{D,Any}) where D =
+    hydrogen_potential(grids; center = _center_vector(w, D),
+        softening = A.softening, taper = A.taper)
+
 abstract type AbstractMeasurementMap end
 
 """
@@ -117,5 +155,104 @@ function measurement_adjoint(B::PointDensity, ψ::AbstractArray,
         idx = B.indices
         g[idx] .= 2 .* r .* ψ[idx] ./ σ²
     end
+    return g
+end
+
+"""
+    MomentumDensity(indices=Colon(); shift=false)
+
+Measurement map `ψ ↦ |F(ψ)|² / N`, where `F` is the unnormalized FFT and
+`N = length(ψ)` (the product of the grid dimensions). This is the unitary
+momentum density: its sum equals `sum(abs2, ψ)`, the same total as
+[`PointDensity`](@ref). `indices` selects momentum modes in FFT order; with
+`shift=true`, `fftshift` is applied first and indices refer to the centered
+(per-axis) momentum ordering. For a tuple of states the results are
+concatenated.
+"""
+struct MomentumDensity{I} <: AbstractMeasurementMap
+    indices::I
+    shift::Bool
+end
+
+function MomentumDensity(indices = Colon(); shift::Bool = false)
+    return MomentumDensity{typeof(indices)}(indices, shift)
+end
+
+function apply_measurement(B::MomentumDensity, ψ::AbstractArray)
+    n = abs2.(fft(ψ)) ./ length(ψ)
+    B.shift && (n = fftshift(n))
+    return vec(n[B.indices])
+end
+
+function apply_measurement(B::MomentumDensity, ψs::Tuple)
+    return vcat((apply_measurement(B, s) for s in ψs)...)
+end
+
+function _measurement_residual_array(B::MomentumDensity, ψ::AbstractArray,
+        r::AbstractVector)
+    rfull = zeros(Float64, size(ψ))
+    if B.indices isa Colon
+        rfull .= reshape(r, size(ψ))
+    else
+        rfull[B.indices] .= r
+    end
+    B.shift && (rfull = ifftshift(rfull))
+    return rfull
+end
+
+# B = |Fψ|²/N, so ∂B/∂ψ* = Fψ/N and Fᴴ = N·ifft gives
+# g = 2·ifft(r ⊙ Fψ)/σ².
+function measurement_adjoint(B::MomentumDensity, ψ::AbstractArray,
+        r::AbstractVector, σ²::Real)
+    rfull = _measurement_residual_array(B, ψ, r)
+    return 2 .* ifft(rfull .* fft(ψ)) ./ σ²
+end
+
+"""
+    CompositeMeasurement(maps...)
+
+Concatenate several measurement maps. `apply_measurement` returns the
+concatenation of the component measurements, in order; `measurement_adjoint`
+splits the residual by component and sums the component adjoints. For a tuple
+of states the per-state blocks are concatenated in the same order as for
+[`PointDensity`](@ref).
+"""
+struct CompositeMeasurement{M} <: AbstractMeasurementMap
+    maps::M
+end
+
+function CompositeMeasurement(maps::Tuple)
+    isempty(maps) && throw(ArgumentError(
+        "at least one measurement map is required"))
+    all(m -> m isa AbstractMeasurementMap, maps) || throw(ArgumentError(
+        "all entries of a CompositeMeasurement must be measurement maps"))
+    return CompositeMeasurement{typeof(maps)}(maps)
+end
+
+CompositeMeasurement(maps::AbstractVector) = CompositeMeasurement(Tuple(maps))
+CompositeMeasurement(maps...) = CompositeMeasurement(maps)
+
+function apply_measurement(B::CompositeMeasurement, ψ::AbstractArray)
+    return vcat((apply_measurement(m, ψ) for m in B.maps)...)
+end
+
+function apply_measurement(B::CompositeMeasurement, ψs::Tuple)
+    return vcat((apply_measurement(B, s) for s in ψs)...)
+end
+
+function measurement_adjoint(B::CompositeMeasurement, ψ::AbstractArray,
+        r::AbstractVector, σ²::Real)
+    g = zeros(ComplexF64, size(ψ))
+    offset = 0
+    for m in B.maps
+        n = length(apply_measurement(m, ψ))
+        offset + n ≤ length(r) || throw(ArgumentError(
+            "residual is too short for the composite measurement"))
+        g .+= measurement_adjoint(m, ψ, r[offset + 1:offset + n], σ²)
+        offset += n
+    end
+    offset == length(r) || throw(ArgumentError(
+        "residual length $(length(r)) does not match the composite " *
+        "measurement length $offset"))
     return g
 end

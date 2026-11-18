@@ -39,8 +39,9 @@ function loss_and_grad(problem::InverseProblem, θ::AbstractVector;
         length(ψ0s) == length(problem.times) || throw(ArgumentError(
             "input map produced $(length(ψ0s)) states for $(length(problem.times)) times"))
 
+        Vtot = _total_potential(problem, V, problem.inputs[i])
         trajs = ntuple(t -> _propagate_with_history(problem.forward,
-                              ψ0s[t], V, problem.times[t]),
+                              ψ0s[t], Vtot, problem.times[t]),
             length(ψ0s))
         finals = ntuple(t -> trajs[t].states[end], length(trajs))
         μhat = apply_measurement(problem.measurement, finals)
